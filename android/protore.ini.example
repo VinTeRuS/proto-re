@@ -4,12 +4,12 @@
 
 # Render resolution height; the width follows the screen's aspect ratio and the frame is scaled to the screen.
 # 0 = the full window size. Android default 720 (540 for weak GPUs, 900/1080 for flagships).
-render_height = 720
+render_height = 540
 
 # Texture quality: number of top mip levels dropped from large mipmapped textures (>= texture_skip_min_size).
 # 0 = original, 1 = half resolution (a quarter of the memory), 2 = quarter resolution. Android default 1.
 texture_skip_mips = 1
-texture_skip_min_size = 512
+texture_skip_min_size = 256
 
 # Decode DXT (BC1-3) textures on the CPU. Needed on GPUs without BC formats (Mali, PowerVR) and detected
 # automatically; 1/0 forces it on/off.
