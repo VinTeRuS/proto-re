@@ -12,20 +12,20 @@ import sys
 
 import pefile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DLL = os.environ.get("PROTORE_ENGINE",
-                     os.path.expanduser("~/Downloads/Prototype (2009)/Prototype/prototypeenginef.dll"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import recomp  # noqa: E402  (config loading: tools/recomp/game.py or RECOMP_CONFIG)
 
 
 def main():
-    pe = pefile.PE(DLL, fast_load=True)
+    recomp.load_config(recomp.default_config())
+    pe = pefile.PE(recomp.IMAGE, fast_load=True)
     base = pe.OPTIONAL_HEADER.ImageBase
     text = pe.sections[0]
     lo = base + text.VirtualAddress
     hi = lo + text.Misc_VirtualSize
     code = text.get_data()
     starts, ends = [], {}
-    with open(os.path.join(ROOT, "re", "functions.csv")) as f:
+    with open(recomp.FUNCTIONS_CSV) as f:
         next(f)
         for row in f:
             p = row.split(",")
@@ -78,7 +78,7 @@ def main():
         t = jmp_target(v)
         if t and t not in ends and not inside(t):
             found.add(t)
-    out = os.path.join(ROOT, "re", "extra_functions.txt")
+    out = recomp.EXTRA_FUNCTIONS
     with open(out, "w") as f:
         f.write("# Function entries missing from functions.csv (tools/recomp/data_entries.py)\n")
         for v in sorted(found):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static recompiler: x86-32 functions of prototypeenginef.dll -> C (see src/recomp/runtime.h).
+"""Static recompiler: x86-32 functions of a PE image (tools/recomp/game.py) -> C (see src/recomp/runtime.h).
 
 Each function becomes `void f_<va>(Ctx* c)`. Control flow inside the function maps to labels and goto; jumps
 leaving the function are tail calls through RecompDispatch; calls push the real guest return address and go
@@ -8,7 +8,7 @@ exactly for every instruction that defines them (no liveness elimination yet). U
 emitted as RecompUnimplemented() calls and counted in the summary, never silently dropped.
 
 Usage:
-  recomp.py --functions <rva list file | all> --out <file.c>
+  recomp.py [--config game.py] --functions <rva list file | all> --out <file.c>
 """
 import argparse
 import collections
@@ -21,30 +21,58 @@ import pefile
 import re
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DLL = os.environ.get("PROTORE_ENGINE",
-                     os.path.expanduser("~/Downloads/Prototype (2009)/Prototype/prototypeenginef.dll"))
-BASE = 0x10000000  # the DLL's preferred base; --base rebases everything (rebase())
-ORIG_BASE = 0x10000000
+# Per-game settings (image path, addresses of special calls and helpers) live in a config module: tools/recomp/
+# game.py by default, --config or RECOMP_CONFIG for another one. load_config() fills the globals below.
+IMAGE = None  # PE image (exe or dll) being recompiled
+IMAGE_NAME = None  # its file name, for the generated headers
+FUNCTIONS_CSV = None  # Ghidra export (tools/ghidra/ExportFunctions.java)
+EXTRA_FUNCTIONS = None  # entries Ghidra missed (tools/recomp/data_entries.py)
+BASE = None  # load address of the generated code; --base rebases everything (rebase())
+ORIG_BASE = None  # the image's preferred base (PE header)
 LOCALIZE = True  # general registers in C locals (--no-localize to compare)
 DIRTY_TRACKING = True  # spill only changed state (--no-dirty to compare)
-NATIVE = False  # use NATIVE_OVERRIDES (native host builds: --base other than the DLL's)
+NATIVE = False  # use NATIVE_OVERRIDES (native host builds: --base other than the image's)
 
 REG32 = {"eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi"}
 REG16 = {"ax": "eax", "cx": "ecx", "dx": "edx", "bx": "ebx", "sp": "esp", "bp": "ebp", "si": "esi", "di": "edi"}
 REG8L = {"al": "eax", "cl": "ecx", "dl": "edx", "bl": "ebx"}
 REG8H = {"ah": "eax", "ch": "ecx", "dh": "edx", "bh": "ebx"}
 # User-mode selectors of 32-bit Windows; only ever read by the engine (stack/segment probes).
-# Calls with a special implementation in recompiled code (MSVCR80 setjmp/longjmp: thunk and IAT slot addresses).
-SETJMP_TARGETS = {0x10a88a30}
+# Calls with a special implementation in recompiled code (CRT setjmp/longjmp: thunk and IAT slot addresses).
+SETJMP_TARGETS = set()
+# Engine functions replaced by native implementations in the native host: f_<addr> just forwards to
+# Native_<original addr>.
+NATIVE_OVERRIDES = set()
 # Statically linked MSVC helpers emitted inline at their call sites (no call, no register spill): float->int64
 # truncation, stack probes (alloca/large frames) and 64-bit integer helpers.
-# Engine functions replaced by native implementations in the native host (src/native/hot_*.cpp): f_<addr> just
-# forwards to Native_<original addr>.
-NATIVE_OVERRIDES = {0x105e8860, 0x105c62e0, 0x105eb280, 0x1071b610}
-INLINE_HELPERS = {0x10a88426: "ftol2", 0x10a883b0: "chkstk", 0x10a889e0: "chkstk16", 0x10a889f6: "chkstk8",
-                  0x10a88370: "allmul", 0x10a884b0: "allshl", 0x10ba2b50: "aullshr"}
-SETJMP_IAT = {0x11331fc4}
-LONGJMP_IAT = {0x11331fbc}
+INLINE_HELPERS = {}
+SETJMP_IAT = set()
+LONGJMP_IAT = set()
+
+
+def load_config(path):
+    """Reads a game config module (see tools/recomp/game.py) into the globals above."""
+    global IMAGE, IMAGE_NAME, FUNCTIONS_CSV, EXTRA_FUNCTIONS, BASE, ORIG_BASE
+    global SETJMP_TARGETS, NATIVE_OVERRIDES, INLINE_HELPERS, SETJMP_IAT, LONGJMP_IAT
+    cfg = {"__file__": path}
+    with open(path) as f:
+        exec(compile(f.read(), path, "exec"), cfg)
+    IMAGE = os.path.expanduser(cfg["IMAGE"])
+    IMAGE_NAME = os.path.basename(IMAGE)
+    FUNCTIONS_CSV = cfg.get("FUNCTIONS_CSV", os.path.join(ROOT, "re", "functions.csv"))
+    EXTRA_FUNCTIONS = cfg.get("EXTRA_FUNCTIONS", os.path.join(ROOT, "re", "extra_functions.txt"))
+    ORIG_BASE = BASE = pefile.PE(IMAGE, fast_load=True).OPTIONAL_HEADER.ImageBase
+    SETJMP_TARGETS = set(cfg.get("SETJMP_TARGETS", ()))
+    NATIVE_OVERRIDES = set(cfg.get("NATIVE_OVERRIDES", ()))
+    INLINE_HELPERS = dict(cfg.get("INLINE_HELPERS", {}))
+    SETJMP_IAT = set(cfg.get("SETJMP_IAT", ()))
+    LONGJMP_IAT = set(cfg.get("LONGJMP_IAT", ()))
+
+
+def default_config():
+    return os.environ.get("RECOMP_CONFIG", os.path.join(ROOT, "tools", "recomp", "game.py"))
+
+
 SEGMENT_SELECTORS = {"cs": 0x1b, "ds": 0x23, "es": 0x23, "ss": 0x23, "fs": 0x3b, "gs": 0x0}
 
 COND = {
@@ -140,7 +168,7 @@ def relocate_pe(pe):
 
 def load_all_starts():
     """Every entry in functions.csv, thunks included."""
-    with open(os.path.join(ROOT, "re", "functions.csv")) as f:
+    with open(FUNCTIONS_CSV) as f:
         next(f)
         return [int(row.split(",", 1)[0], 16) - ORIG_BASE + BASE for row in f]
 
@@ -155,7 +183,7 @@ def load_functions():
     next function entry (thunks included); decoding only follows control flow, so data in between is never read."""
     sizes = {}
     starts = []
-    with open(os.path.join(ROOT, "re", "functions.csv")) as f:
+    with open(FUNCTIONS_CSV) as f:
         next(f)
         for row in f:
             p = row.split(",")
@@ -168,7 +196,7 @@ def load_functions():
                 THUNKS.add(va)
                 EXTRA_ENTRIES.add(va)
     # Entries Ghidra missed (tools/recomp/data_entries.py): decoded up to the next entry like the others.
-    extra_path = os.path.join(ROOT, "re", "extra_functions.txt")
+    extra_path = EXTRA_FUNCTIONS
     if os.path.exists(extra_path):
         known = set(starts)
         with open(extra_path) as f:
@@ -1446,7 +1474,7 @@ class WriteIfChanged:
 
 def write_split(out_dir, funcs, patches, per_file):
     os.makedirs(out_dir, exist_ok=True)
-    head = '/* Generated by tools/recomp/recomp.py from prototypeenginef.dll; do not edit. */\n' \
+    head = f'/* Generated by tools/recomp/recomp.py from {IMAGE_NAME}; do not edit. */\n' \
            '#include <math.h>\n#include "runtime.h"\n#include "runtime_fp.h"\n\n'
     # Functions go to files by address (64 KiB of code per file), so adding or changing a function rewrites only
     # its own file and make rebuilds just that part.
@@ -1481,7 +1509,10 @@ def write_split(out_dir, funcs, patches, per_file):
 
 
 def main():
+    load_config(next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--config=")), None)
+                or (sys.argv[sys.argv.index("--config") + 1] if "--config" in sys.argv else default_config()))
     ap = argparse.ArgumentParser()
+    ap.add_argument("--config", help="game config module (default tools/recomp/game.py or RECOMP_CONFIG)")
     ap.add_argument("--functions", required=True)
     ap.add_argument("--out", required=True, help="output .c file, or a directory with --split")
     ap.add_argument("--split", type=int, default=0, help="functions per file (writes part_NNNN.c + table.c)")
@@ -1503,7 +1534,7 @@ def main():
     else:
         vas = sorted((int(l.strip(), 16) if int(l.strip(), 16) >= ORIG_BASE else int(l.strip(), 16) + ORIG_BASE)
                      - ORIG_BASE + BASE for l in open(args.functions) if l.strip())
-    pe = pefile.PE(DLL, fast_load=True)
+    pe = pefile.PE(IMAGE, fast_load=True)
     relocate_pe(pe)
     md = capstone.Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
     md.detail = True
@@ -1555,7 +1586,7 @@ def main():
         return
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w") as f:
-        f.write("/* Generated by tools/recomp/recomp.py from prototypeenginef.dll; do not edit. */\n")
+        f.write(f"/* Generated by tools/recomp/recomp.py from {IMAGE_NAME}; do not edit. */\n")
         f.write('#include <math.h>\n#include "runtime.h"\n#include "runtime_fp.h"\n\n')
         for va, _ in funcs:
             f.write(f"void f_{va:08x}(Ctx* c);\n")
