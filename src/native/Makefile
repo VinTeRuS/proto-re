@@ -38,7 +38,8 @@ RECOMP_OPT := -O2
 TSO ?= 1
 RECOMP_EXTRA := $(if $(filter 1,$(TSO)),-DRECOMP_TSO)
 DEP_INCLUDES := -I$(DEPS)/include
-LDFLAGS := -shared -Wl,-Bsymbolic -static-libstdc++ -Wl,--no-undefined -L$(DEPS)/lib -ldxvk_d3d9 -lFAudio -lSDL2 -llog -landroid
+LDFLAGS := -shared -Wl,-Bsymbolic -static-libstdc++ -Wl,--no-undefined -L$(DEPS)/lib -ldxvk_d3d9 -lFAudio -lSDL2 \
+           -lavformat -lavcodec -lavutil -llog -landroid
 # Adreno: Turnip and libadrenotools from android/build-turnip.sh (arm64 only; built without them otherwise).
 TURNIP ?= $(HOME)/proto-re-data/android-turnip
 ifneq ($(and $(filter arm64-v8a,$(ABI)),$(wildcard $(TURNIP)/lib/libadrenotools.a)),)
@@ -60,7 +61,7 @@ FAUDIO_LIB ?= $(FAUDIO)/build-native
 TARGET_FLAGS :=
 DEP_INCLUDES := -I$(FAUDIO)/include
 LDFLAGS := -pthread -L$(DXVK_LIB) -Wl,-rpath,$(DXVK_LIB) -ldxvk_d3d9 -L$(FAUDIO_LIB) -Wl,-rpath,$(FAUDIO_LIB) -lFAudio \
-           -lSDL2
+           -lSDL2 $(shell pkg-config --libs libavformat libavcodec libavutil)
 BINARY := proto-native
 endif
 

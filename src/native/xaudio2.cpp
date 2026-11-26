@@ -24,6 +24,9 @@
 
 namespace native {
 
+// The game's initialized XAudio2 engine; Bink movies (bink.cpp) play their sound through it.
+FAudio* g_engine_audio = nullptr;
+
 namespace {
 
 constexpr uint32_t kE_InvalidArg = 0x80070057u, kE_NoInterface = 0x80004002u, kE_Fail = 0x80004005u;
@@ -238,6 +241,7 @@ M(EngineRelease) {
     Object* o = Obj(g);
     uint32_t r = --o->refs;
     if (!r) {
+        if (g_engine_audio == o->audio) g_engine_audio = nullptr;
         FAudio_Release(o->audio);
         for (EngineCallback* cb : o->engine_callbacks) delete cb;
         delete o;
@@ -268,6 +272,7 @@ M(Initialize) {
     uint32_t flags = Arg(c, 1) | (long_quantum ? FAUDIO_1024_QUANTUM : 0);
     uint32_t hr = FAudio_Initialize(Obj(Arg(c, 0))->audio, flags, FAUDIO_DEFAULT_PROCESSOR);
     Log("xaudio2: Initialize(flags %x) -> %x", Arg(c, 1), hr);
+    if (hr == 0) g_engine_audio = Obj(Arg(c, 0))->audio;
     Return(c, hr, 3);
 }
 M(RegisterForCallbacks) {

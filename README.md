@@ -6,7 +6,7 @@ Native Android port of Prototype (2009). Not an emulator and not Wine: `prototyp
 recompiled from x86 to C, built for arm64 and run on top of my own Win32/D3D9 layer (SDL2, DXVK, FAudio).
 The APK has no game data in it, you copy the files from your own copy of the game.
 
-**v0.2.0 is the last update.** I'm not planning more work on the port; the code stays here as it is.
+**v0.3.0 is the latest update.**
 
 If you like the port, you can support me on Patreon: **[patreon.com/VinTeRuS](https://www.patreon.com/cw/VinTeRuS/membership)** (from $3 a month).
 
@@ -25,7 +25,6 @@ A phone with Adreno 735: about 40 fps on average at 720p.
 
 ## Known issues
 
-- Videos (Bink) don't play: intro movies are skipped and Web of Intrigue memories stay black.
 - GPUs whose driver only has Vulkan 1.1 or 1.2 (older Mali like G52/G57/G76, PowerVR, some Adreno 6xx/7xx without
   Turnip) can't run it: the graphics layer (DXVK) needs Vulkan 1.3.
 - Adreno 8xx (Snapdragon 8 Elite and newer): Qualcomm's own driver fails, the game uses the bundled Turnip; if that

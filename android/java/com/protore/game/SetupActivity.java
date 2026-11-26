@@ -55,6 +55,16 @@ public class SetupActivity extends Activity {
         return base == null ? null : new File(base, "game");
     }
 
+    /** The app's folder on a memory card (Android/data/com.protore.game/files/game there; no permission needed). */
+    private File sdCardGame() {
+        File[] dirs = getExternalFilesDirs(null);
+        for (int i = 1; i < dirs.length; ++i) {
+            File game = dirs[i] == null ? null : new File(dirs[i], "game");
+            if (game != null && new File(game, DLL).canRead()) return game;
+        }
+        return null;
+    }
+
     private static File sharedGame() {
         return new File(Environment.getExternalStorageDirectory(), "Prototype");
     }
@@ -97,6 +107,7 @@ public class SetupActivity extends Activity {
         File found = null;
         if (app != null && new File(app, DLL).canRead()) found = app;
         else if (hasSharedAccess() && new File(shared, DLL).canRead()) found = shared;
+        else found = sdCardGame();
         if (found == null) {
             showHelp(app, shared, null);
             return;
@@ -106,7 +117,7 @@ public class SetupActivity extends Activity {
             showHelp(app, shared, found.getAbsolutePath() + " is missing: " + String.join(", ", lack));
             return;
         }
-        launch(found == app ? null : shared);
+        launch(found == app ? null : found);
     }
 
     private void launch(File gameDir) {
@@ -213,7 +224,8 @@ public class SetupActivity extends Activity {
                 + "places:", 15, false));
         col.addView(text("1. " + (app != null ? app.getAbsolutePath() : "Android/data/" + getPackageName()
                 + "/files/game") + "\n   The folder exists now. On Android 11+ most file managers cannot open "
-                + "Android/data; copy from a PC over USB, or use option 2.", 14, false));
+                + "Android/data; copy from a PC over USB, or use option 2. The same folder on a memory card "
+                + "works too.", 14, false));
         String access = hasSharedAccess() ? "access granted" : "needs file access: tap the button below";
         col.addView(text("2. " + shared.getAbsolutePath() + "\n   Any file manager can open it (" + access + ").",
                 14, false));

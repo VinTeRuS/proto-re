@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds the third-party native libraries of the Android port for one ABI: SDL2, FAudio and DXVK (d3d9 only, SDL2
-# WSI). Same script locally and on GitHub Actions; nothing here depends on the game files.
+# Builds the third-party native libraries of the Android port for one ABI: SDL2, FAudio, DXVK (d3d9 only, SDL2
+# WSI) and a minimal FFmpeg for the movies. Same script locally and on GitHub Actions; nothing here depends on the game files.
 #
 # Usage: android/build-deps.sh <abi: arm64-v8a | x86_64> <source dir> <install prefix>
 # Needs ANDROID_NDK_HOME (or ANDROID_NDK_LATEST_HOME), cmake, ninja, meson, glslang, git.
@@ -81,6 +81,8 @@ meson setup "$SRC/build/dxvk-$ABI" "$SRC/dxvk" --cross-file "$CROSS" --buildtype
       -Ddxvk_native_wsi=sdl2
 ninja -C "$SRC/build/dxvk-$ABI" -j "$JOBS"
 ninja -C "$SRC/build/dxvk-$ABI" install
+
+"$(dirname "$0")"/build-ffmpeg.sh "$ABI" "$SRC" "$PREFIX"
 
 echo "installed to $PREFIX:"
 find "$PREFIX" -name "*.so" | sort

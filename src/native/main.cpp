@@ -336,7 +336,7 @@ int main(int argc, char** argv) {
     // too, overriding the manifest: holding the phone upright then turned the game sideways. Landscape both ways only.
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
 #endif
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) Fatal("SDL_Init: %s", SDL_GetError());
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) != 0) Fatal("SDL_Init: %s", SDL_GetError());
     g_sdl_window = SDL_CreateWindow("Prototype", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 720,
                                     SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE
 #ifdef __ANDROID__
